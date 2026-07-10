@@ -26,7 +26,7 @@ class FormRegisterSeeder extends Seeder
             [
                 'form_category_id' => $it->id,
                 'name' => 'บำรุงรักษา Server',
-                'revision' => '04',
+                'revision' => '05',
                 'frequency_note' => 'ทุกเดือน (รายเดือน)',
                 'tags' => ['รายเดือน', 'IT', 'Server'],
                 'module_key' => 'server_maintenance',
@@ -35,6 +35,24 @@ class FormRegisterSeeder extends Seeder
                 'confidentiality' => 'confidential',
                 'effective_date' => '2024-01-01',
                 'order' => 1,
+                'is_active' => true,
+            ],
+        );
+
+        FormTemplate::updateOrCreate(
+            ['code' => 'FM-IT-03'],
+            [
+                'form_category_id' => $it->id,
+                'name' => 'บำรุงรักษาเครื่อง Client',
+                'revision' => '01',
+                'frequency_note' => 'ทุกเดือน (รายเดือน)',
+                'tags' => ['รายเดือน', 'IT', 'Client', 'Action1'],
+                'module_key' => 'client_maintenance',
+                'route' => '/client-maintenance',
+                'description' => 'บันทึกการบำรุงรักษาเครื่อง Client รายเดือน (patch / AV / disk) รายเครื่อง พร้อมแนบรายงาน Action1',
+                'confidentiality' => 'confidential',
+                'effective_date' => '2024-01-01',
+                'order' => 2,
                 'is_active' => true,
             ],
         );

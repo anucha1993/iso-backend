@@ -46,7 +46,9 @@ class RecordPdfController extends Controller
             abort(403, 'เดือนนี้ยังไม่ได้รับการอนุมัติ จึงพิมพ์ได้เฉพาะหัวหน้า/ผู้ดูแลระบบเท่านั้น');
         }
 
-        $items = ChecklistItem::where('is_active', true)->orderBy('order')->get()
+        $items = ChecklistItem::where('is_active', true)
+            ->where('form_template_id', $record->form_template_id)
+            ->orderBy('order')->get()
             ->map(fn ($i) => ['id' => $i->id, 'name' => $i->name, 'freq' => $i->frequency_note])->all();
 
         $standards = ChecklistStandard::where('is_active', true)->orderBy('order')->get()
@@ -95,6 +97,7 @@ class RecordPdfController extends Controller
             'rev' => $template?->revision ?? '',
             'createdRevision' => $record->created_revision,
             'server' => $record->server?->name ?? '-',
+            'serverType' => $record->server?->server_type,
             'year' => $record->year,
             'responsible' => $record->responsible ?? '-',
             'statusLabel' => $targetRound ? ($statusLabels[$targetRound->status] ?? $targetRound->status) : ($statusLabels[$record->status] ?? $record->status),
@@ -104,6 +107,7 @@ class RecordPdfController extends Controller
             'items' => $items,
             'standards' => $standards,
             'grid' => $grid,
+            'na' => $record->na_checklist_items ?? [],
             'readings' => $readings,
             'summary' => $analysis['summary'],
             'health' => $analysis['health_score'],

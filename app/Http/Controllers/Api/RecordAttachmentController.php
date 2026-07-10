@@ -18,16 +18,13 @@ class RecordAttachmentController extends Controller
      */
     public function store(Request $request, MaintenanceRecord $record): JsonResponse
     {
-        if (! $record->isEditable()) {
-            throw ValidationException::withMessages([
-                'file' => ['ไม่สามารถแนบไฟล์ได้ เนื่องจากแบบฟอร์มถูกส่ง/อนุมัติแล้ว'],
-            ]);
-        }
-
         $data = $request->validate([
             'file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'], // 10 MB
-            'month' => ['nullable', 'integer', 'between:1,12'],
+            'month' => ['required', 'integer', 'between:1,12'],
             'caption' => ['nullable', 'string', 'max:255'],
+        ], [
+            'month.required' => 'กรุณาระบุรอบเดือนของหลักฐานก่อนแนบไฟล์',
+            'month.between' => 'รอบเดือนไม่ถูกต้อง',
         ]);
 
         $file = $request->file('file');
@@ -49,11 +46,11 @@ class RecordAttachmentController extends Controller
         return response()->json(['data' => $attachment], 201);
     }
 
-    public function destroy(MaintenanceRecord $record, RecordAttachment $attachment): JsonResponse
+    public function destroy(Request $request, MaintenanceRecord $record, RecordAttachment $attachment): JsonResponse
     {
         abort_unless($attachment->maintenance_record_id === $record->id, 404);
 
-        if (! $record->isEditable()) {
+        if (! $record->isEditable() && ! $request->user()->can('records.approve')) {
             throw ValidationException::withMessages([
                 'file' => ['ไม่สามารถลบไฟล์ได้ เนื่องจากแบบฟอร์มถูกส่ง/อนุมัติแล้ว'],
             ]);

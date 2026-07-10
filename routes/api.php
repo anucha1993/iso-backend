@@ -4,10 +4,13 @@ use App\Http\Controllers\Api\AnalysisController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChecklistController;
+use App\Http\Controllers\Api\ClientMachineController;
+use App\Http\Controllers\Api\ClientMaRecordController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FormRegisterController;
 use App\Http\Controllers\Api\FormTemplateController;
 use App\Http\Controllers\Api\MaintenanceRecordController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RecordAttachmentController;
 use App\Http\Controllers\Api\RecordPdfController;
@@ -17,6 +20,7 @@ use Illuminate\Support\Facades\Route;
 
 // ---- Public ----
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::get('/document-years', [DashboardController::class, 'documentYears'])->middleware('throttle:60,1');
 
 // ---- Authenticated ----
 Route::middleware('auth:sanctum')->group(function () {
@@ -25,7 +29,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Dashboard & form register (module-agnostic)
     Route::get('/dashboard', [DashboardController::class, 'index']);
+    Route::get('/my-tasks', [DashboardController::class, 'myTasks']);
     Route::get('/form-register', [FormRegisterController::class, 'index']);
+
+    // In-app notifications (header bell / MyJob)
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     // Profile signature (stored in user profile)
     Route::post('/profile/signature', [ProfileController::class, 'updateSignature']);
@@ -48,6 +58,8 @@ Route::middleware('auth:sanctum')->group(function () {
         ->middleware('permission:records.create');
     Route::put('/maintenance-records/{record}', [MaintenanceRecordController::class, 'update'])
         ->middleware('permission:records.update');
+    Route::delete('/maintenance-records/{record}', [MaintenanceRecordController::class, 'destroy'])
+        ->middleware('permission:records.delete');
     Route::post('/maintenance-records/{record}/rounds/{month}/submit', [MaintenanceRecordController::class, 'submitMonth'])
         ->middleware('permission:records.submit');
     Route::post('/maintenance-records/{record}/rounds/{month}/approve', [MaintenanceRecordController::class, 'approveMonth'])
@@ -61,9 +73,32 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/maintenance-records/{record}/attachments/{attachment}', [RecordAttachmentController::class, 'destroy'])
         ->middleware('permission:records.update');
 
+    // Client machines master (FM-IT-03)
+    Route::get('/client-machines', [ClientMachineController::class, 'index']);
+    Route::post('/client-machines', [ClientMachineController::class, 'store'])->middleware('permission:servers.manage');
+    Route::put('/client-machines/{machine}', [ClientMachineController::class, 'update'])->middleware('permission:servers.manage');
+    Route::post('/client-machines/import', [ClientMachineController::class, 'bulkImport'])->middleware('permission:servers.manage');
+
+    // Client maintenance records (FM-IT-03)
+    Route::get('/client-ma', [ClientMaRecordController::class, 'index']);
+    Route::get('/client-ma/{record}', [ClientMaRecordController::class, 'show']);
+    Route::post('/client-ma', [ClientMaRecordController::class, 'store'])->middleware('permission:records.create');
+    Route::put('/client-ma/{record}', [ClientMaRecordController::class, 'update'])->middleware('permission:records.update');
+    Route::post('/client-ma/{record}/submit', [ClientMaRecordController::class, 'submit'])->middleware('permission:records.submit');
+    Route::post('/client-ma/{record}/approve', [ClientMaRecordController::class, 'approve'])->middleware('permission:records.approve');
+    Route::post('/client-ma/{record}/reject', [ClientMaRecordController::class, 'reject'])->middleware('permission:records.approve');
+    Route::post('/client-ma/{record}/report', [ClientMaRecordController::class, 'uploadReport'])->middleware('permission:records.update');
+    Route::delete('/client-ma/{record}/report', [ClientMaRecordController::class, 'deleteReport'])->middleware('permission:records.update');
+    Route::delete('/client-ma/{record}', [ClientMaRecordController::class, 'destroy'])->middleware('permission:records.delete');
+
     // Admin: server master data
     Route::post('/servers', [ServerController::class, 'store'])->middleware('permission:servers.manage');
     Route::put('/servers/{server}', [ServerController::class, 'update'])->middleware('permission:servers.manage');
+
+    // Admin: checklist master data (FM-IT-02 items)
+    Route::post('/checklist-items', [ChecklistController::class, 'storeItem'])->middleware('permission:users.manage');
+    Route::put('/checklist-items/{item}', [ChecklistController::class, 'updateItem'])->middleware('permission:users.manage');
+    Route::delete('/checklist-items/{item}', [ChecklistController::class, 'destroyItem'])->middleware('permission:users.manage');
 
     // Admin: users & roles
     Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.manage');

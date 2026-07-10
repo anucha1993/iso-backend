@@ -9,6 +9,7 @@ class Server extends Model
 {
     protected $fillable = [
         'name',
+        'server_type',
         'responsible',
         'description',
         'is_active',

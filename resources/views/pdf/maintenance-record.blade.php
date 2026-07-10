@@ -4,42 +4,42 @@
     <meta charset="utf-8">
     <style>
         * { font-family: garuda, sans-serif; }
-        body { font-size: 8pt; color: #1f2937; line-height: 1.15; }
+        body { font-size: 8pt; color: #1f2937; line-height: 1.08; }
         table { border-collapse: collapse; }
         .w100 { width: 100%; }
         .center { text-align: center; }
         .right { text-align: right; }
         .vtop { vertical-align: top; }
-        .vmid { vertical-align: middle; }
         .muted { color: #64748b; }
 
         /* Header band */
-        .hband td { background: #1e293b; padding: 6px 14px; vertical-align: middle; }
+        .hband td { background: #1e293b; padding: 4px 14px; vertical-align: middle; }
         .htitle { color: #ffffff; font-size: 15pt; font-weight: bold; }
         .hsub { color: #94a3b8; font-size: 8pt; letter-spacing: .5px; }
         .logochip { background: #ffffff; padding: 5px 7px; }
-        .docchip { background: #334155; color: #e2e8f0; padding: 2px 9px; font-size: 8pt; }
         .confbadge { background: #f59e0b; color: #ffffff; padding: 2px 9px; font-size: 7.5pt; }
 
         /* Info strip */
-        .info td { background: #f1f5f9; padding: 3px 14px; }
+        .info td { background: #f1f5f9; padding: 2px 14px; }
         .info .lbl { color: #64748b; font-size: 7pt; }
         .info .val { font-size: 9pt; font-weight: bold; color: #0f172a; }
 
         /* Section heading */
-        .sect { font-size: 9.5pt; font-weight: bold; color: #1e293b; padding: 1px 0 1px 7px; border-left: 3px solid #4f46e5; margin: 5px 0 2px; }
+        .sect { font-size: 9.5pt; font-weight: bold; color: #1e293b; padding: 1px 0 1px 7px; border-left: 3px solid #4f46e5; margin: 3px 0 1px; }
 
         /* Data grid */
         .grid { width: 100%; }
         .grid th { background: #334155; color: #ffffff; font-weight: bold; text-align: center; font-size: 7.5pt; border: 0.4px solid #475569; padding: 2px 2px; }
-        .grid td { border: 0.4px solid #d7dee8; padding: 1px 3px; line-height: 1.1; }
+        .grid td { border: 0.4px solid #d7dee8; padding: 0.5px 3px; line-height: 1.15; }
+        .grid.loose td { line-height: 1.35; }
         .grid tbody tr.alt td { background: #f8fafc; }
+        .grid tbody tr.na td { background: #f8fafc; color: #94a3b8; }
         .chk { color: #16a34a; font-weight: bold; }
         .xno { color: #dc2626; font-weight: bold; }
 
         /* Analysis cards */
-        .cards td { text-align: center; padding: 4px 4px; border: 2px solid #ffffff; }
-        .cards .n { font-size: 14pt; font-weight: bold; }
+        .cards td { text-align: center; padding: 3px 4px; border: 2px solid #ffffff; }
+        .cards .n { font-size: 13pt; font-weight: bold; }
         .cards .l { font-size: 7.5pt; }
         .c-normal { background: #dcfce7; }
         .c-risk { background: #fef3c7; }
@@ -52,9 +52,9 @@
 
         /* Signature cards */
         .sigcard { width: 100%; border: 0.6px solid #cbd5e1; }
-        .sigcard td { padding: 4px 12px; }
-        .sigtitle { background: #f1f5f9; font-weight: bold; color: #334155; text-align: center; border-bottom: 0.5px solid #e2e8f0; padding: 3px; }
-        .sigblank { height: 34px; text-align: center; vertical-align: middle; }
+        .sigcard td { padding: 2px 10px; }
+        .sigtitle { background: #f1f5f9; font-weight: bold; color: #334155; text-align: center; border-bottom: 0.5px solid #e2e8f0; padding: 1px; }
+        .sigblank { height: 18px; text-align: center; vertical-align: middle; }
         .signame { text-align: center; font-weight: bold; color: #0f172a; }
         .sigmeta { color: #64748b; font-size: 7.5pt; }
     </style>
@@ -75,7 +75,7 @@
     {{-- Info strip --}}
     <table class="w100 info" style="margin-top:6px;">
         <tr>
-            <td width="30%"><div class="lbl">ชื่อเครื่อง SERVER</div><div class="val">{{ $server }}</div></td>
+            <td width="30%"><div class="lbl">ชื่อเครื่อง SERVER</div><div class="val">{{ $server }}@if($serverType) <span class="muted" style="font-weight:normal; font-size:8pt;">· {{ $serverType }}</span>@endif</div></td>
             <td width="14%"><div class="lbl">ประจำปี (พ.ศ.)</div><div class="val">{{ $year }}</div></td>
             <td width="24%"><div class="lbl">ผู้รับผิดชอบ</div><div class="val">{{ $responsible }}</div></td>
             <td><div class="lbl">สถานะ / รอบที่พิมพ์</div><div class="val">{{ $statusLabel }} <span class="muted" style="font-weight:normal;">· {{ $roundLabel }}</span>@if($createdRevision) <span class="muted" style="font-weight:normal;">· Rev.{{ $createdRevision }}</span>@endif</div></td>
@@ -84,29 +84,35 @@
 
     {{-- Checklist grid --}}
     <div class="sect">รายการตรวจเช็ครายเดือน</div>
-    <table class="grid">
+    <table class="grid loose">
         <thead>
             <tr>
                 <th width="3%">#</th>
-                <th width="25%" style="text-align:left;">รายการตรวจเช็ค</th>
+                <th width="48%" style="text-align:left;">รายการตรวจเช็ค</th>
                 @foreach($months as $m)<th>{{ $m }}</th>@endforeach
             </tr>
         </thead>
         <tbody>
             @foreach($items as $idx => $item)
-                <tr class="{{ $idx % 2 ? 'alt' : '' }}">
+                @php $isNa = in_array($item['id'], $na); @endphp
+                <tr class="{{ $idx % 2 ? 'alt' : '' }}{{ $isNa ? ' na' : '' }}">
                     <td class="center muted">{{ $idx + 1 }}</td>
                     <td>{{ $item['name'] }}@if($item['freq'])<span class="muted" style="font-size:7pt;"> ({{ $item['freq'] }})</span>@endif</td>
-                    @foreach(range(1,12) as $mo)
-                        @php $v = $grid[$item['id']][$mo] ?? ''; @endphp
-                        <td class="center @if($v === '/') chk @elseif($v === 'X') xno @endif">{{ $v }}</td>
-                    @endforeach
+                    @if($isNa)
+                        <td class="center" colspan="12" style="font-style:italic; color:#94a3b8;">ไม่เกี่ยวข้อง (N/A)</td>
+                    @endif
+                    @unless($isNa)
+                        @foreach(range(1,12) as $mo)
+                            @php $v = $grid[$item['id']][$mo] ?? ''; @endphp
+                            <td class="center @if($v === '/') chk @elseif($v === 'X') xno @endif">{{ $v }}</td>
+                        @endforeach
+                    @endunless
                 </tr>
             @endforeach
         </tbody>
     </table>
     <div class="muted" style="font-size:7pt; margin-top:2px;">
-        <span class="chk">/</span> ตรวจเช็คแล้ว &nbsp;&nbsp; <span class="xno">X</span> ผิดปกติ/ขัดข้อง &nbsp;&nbsp; (ว่าง) ไม่ได้ตรวจเช็ค
+        <span class="chk">/</span> ตรวจเช็คแล้ว &nbsp;&nbsp; <span class="xno">X</span> ผิดปกติ/ขัดข้อง &nbsp;&nbsp; (ว่าง) ไม่ได้ตรวจเช็ค &nbsp;&nbsp; N/A = ไม่เกี่ยวข้องกับ Server นี้
     </div>
 
     {{-- Readings + standards --}}
@@ -182,12 +188,12 @@
     </table>
 
     {{-- Signatures --}}
-    <table class="w100" style="margin-top:5px;">
+    <table class="w100" style="margin-top:2px;">
         <tr>
             <td width="50%" class="vtop" style="padding-right:10px;">
                 <table class="sigcard">
                     <tr><td class="sigtitle" colspan="2">ผู้ตรวจเช็ค / ผู้จัดทำ</td></tr>
-                    <tr><td class="sigblank" colspan="2">@if($preparedSig)<img src="{{ $preparedSig }}" style="height:36px;">@endif</td></tr>
+                    <tr><td class="sigblank" colspan="2">@if($preparedSig)<img src="{{ $preparedSig }}" style="height:18px;">@endif</td></tr>
                     <tr><td class="signame" colspan="2">( {{ $preparedName ?: '.....................................' }} )</td></tr>
                     <tr><td class="sigmeta" width="55%">ตำแหน่ง: {{ $preparedPosition ?: '-' }}</td><td class="sigmeta right">วันที่: {{ $preparedDate ?: '......./......./.......' }}</td></tr>
                 </table>
@@ -195,7 +201,7 @@
             <td width="50%" class="vtop" style="padding-left:10px;">
                 <table class="sigcard">
                     <tr><td class="sigtitle" colspan="2">ผู้ตรวจสอบ / ผู้อนุมัติ</td></tr>
-                    <tr><td class="sigblank" colspan="2">@if($approvedSig)<img src="{{ $approvedSig }}" style="height:36px;">@endif</td></tr>
+                    <tr><td class="sigblank" colspan="2">@if($approvedSig)<img src="{{ $approvedSig }}" style="height:18px;">@endif</td></tr>
                     <tr><td class="signame" colspan="2">( {{ $approvedName ?: '.....................................' }} )</td></tr>
                     <tr><td class="sigmeta" width="55%">ตำแหน่ง: {{ $approvedPosition ?: '-' }}</td><td class="sigmeta right">วันที่: {{ $approvedDate ?: '......./......./.......' }}</td></tr>
                 </table>

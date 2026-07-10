@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
@@ -44,6 +45,9 @@ class AuthController extends Controller
             ]);
         }
 
+        // Previous successful login (captured before recording this one) for a realistic banner.
+        $last = AuditLog::where('user_id', $user->id)->where('event', 'login')->latest('created_at')->first();
+
         $token = $user->createToken('web')->plainTextToken;
 
         AuditLogger::log('login', $user, 'เข้าสู่ระบบสำเร็จ', [], $user->id);
@@ -53,6 +57,8 @@ class AuthController extends Controller
             'user' => $user,
             'roles' => $user->getRoleNames(),
             'permissions' => $user->getAllPermissions()->pluck('name')->values(),
+            'last_login_at' => $last?->created_at,
+            'last_login_ip' => $last?->ip_address,
         ]);
     }
 

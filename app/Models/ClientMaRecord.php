@@ -5,8 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
-class MaintenanceRecord extends Model
+class ClientMaRecord extends Model
 {
     public const STATUS_DRAFT     = 'draft';
     public const STATUS_SUBMITTED = 'submitted';
@@ -15,10 +16,12 @@ class MaintenanceRecord extends Model
 
     protected $fillable = [
         'form_template_id',
-        'created_revision',
-        'server_id',
         'year',
+        'month',
         'responsible',
+        'tasks',
+        'report_files',
+        'note',
         'status',
         'prepared_by',
         'prepared_name',
@@ -31,23 +34,25 @@ class MaintenanceRecord extends Model
         'approved_signature_path',
         'approved_signed_at',
         'rejected_reason',
-        'note',
-        'na_checklist_items',
     ];
+
+    protected $appends = ['prepared_signature_url', 'approved_signature_url'];
 
     protected function casts(): array
     {
         return [
             'year' => 'integer',
-            'na_checklist_items' => 'array',
+            'month' => 'integer',
+            'tasks' => 'array',
+            'report_files' => 'array',
             'prepared_signed_at' => 'datetime',
             'approved_signed_at' => 'datetime',
         ];
     }
 
-    public function server(): BelongsTo
+    public function entries(): HasMany
     {
-        return $this->belongsTo(Server::class);
+        return $this->hasMany(ClientMaEntry::class);
     }
 
     public function formTemplate(): BelongsTo
@@ -55,38 +60,18 @@ class MaintenanceRecord extends Model
         return $this->belongsTo(FormTemplate::class, 'form_template_id');
     }
 
-    public function preparedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'prepared_by');
-    }
-
-    public function approvedBy(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'approved_by');
-    }
-
-    public function entries(): HasMany
-    {
-        return $this->hasMany(MaintenanceEntry::class);
-    }
-
-    public function readings(): HasMany
-    {
-        return $this->hasMany(MaintenanceReading::class);
-    }
-
-    public function rounds(): HasMany
-    {
-        return $this->hasMany(MaintenanceRound::class)->orderBy('month');
-    }
-
-    public function attachments(): HasMany
-    {
-        return $this->hasMany(RecordAttachment::class)->latest();
-    }
-
     public function isEditable(): bool
     {
         return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_REJECTED], true);
+    }
+
+    public function getPreparedSignatureUrlAttribute(): ?string
+    {
+        return $this->prepared_signature_path ? Storage::disk('public')->url($this->prepared_signature_path) : null;
+    }
+
+    public function getApprovedSignatureUrlAttribute(): ?string
+    {
+        return $this->approved_signature_path ? Storage::disk('public')->url($this->approved_signature_path) : null;
     }
 }

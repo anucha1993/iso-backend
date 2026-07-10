@@ -7,12 +7,14 @@ use App\Models\MaintenanceRecord;
 use App\Models\MaintenanceRound;
 use App\Models\Server;
 use App\Models\User;
+use App\Notifications\WorkflowNotification;
 use App\Support\AuditLogger;
 use App\Support\ChecklistAnalyzer;
 use App\Support\SignatureStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -107,11 +109,36 @@ class MaintenanceRecordController extends Controller
         return response()->json(['data' => $this->fullRecord($record)]);
     }
 
+    public function destroy(Request $request, MaintenanceRecord $record): JsonResponse
+    {
+        // Enforce two-step deletion: all evidence files must be removed first.
+        $attachmentCount = $record->attachments()->count();
+        if ($attachmentCount > 0) {
+            throw ValidationException::withMessages([
+                'attachments' => ["ไม่สามารถลบแบบฟอร์มได้ กรุณาลบไฟล์หลักฐานที่แนบทั้งหมดก่อน (เหลือ {$attachmentCount} ไฟล์)"],
+            ]);
+        }
+
+        $label = ($record->server?->name ?? ('#'.$record->id)).' · ปี '.$record->year;
+        AuditLogger::log('deleted', $record, 'ลบแบบฟอร์มบำรุงรักษา: '.$label);
+
+        DB::transaction(function () use ($record) {
+            $record->entries()->delete();
+            $record->readings()->delete();
+            $record->rounds()->delete();
+            $record->delete();
+        });
+
+        return response()->json(['ok' => true]);
+    }
+
     public function update(Request $request, MaintenanceRecord $record): JsonResponse
     {
         $data = $request->validate([
             'note' => ['nullable', 'string', 'max:2000'],
             'responsible' => ['nullable', 'string', 'max:255'],
+            'na_checklist_items' => ['nullable', 'array'],
+            'na_checklist_items.*' => ['integer'],
 
             'readings' => ['array'],
             'readings.*.month' => ['required', 'integer', 'between:1,12'],
@@ -140,6 +167,7 @@ class MaintenanceRecordController extends Controller
             $record->update([
                 'note' => $data['note'] ?? $record->note,
                 'responsible' => $data['responsible'] ?? $record->responsible,
+                'na_checklist_items' => $data['na_checklist_items'] ?? $record->na_checklist_items,
             ]);
 
             foreach ($data['readings'] ?? [] as $reading) {
@@ -212,6 +240,14 @@ class MaintenanceRecordController extends Controller
         $this->syncAggregate($record);
         AuditLogger::log('submitted', $record, "ส่งอนุมัติรอบเดือน {$month} — {$record->server->name} ปี {$record->year}");
 
+        $approvers = User::permission('records.approve')->where('is_active', true)->where('id', '!=', $user->id)->get();
+        Notification::send($approvers, new WorkflowNotification(
+            'submitted',
+            'มีคำขออนุมัติใหม่',
+            "{$record->server->name} · {$this->monthName($month)} {$record->year} — รอการอนุมัติ (ส่งโดย {$user->name})",
+            "/records/{$record->id}?month={$month}",
+        ));
+
         return response()->json(['data' => $this->fullRecord($record->fresh())]);
     }
 
@@ -244,6 +280,15 @@ class MaintenanceRecordController extends Controller
         $this->syncAggregate($record);
         AuditLogger::log('approved', $record, "อนุมัติรอบเดือน {$month} — {$record->server->name} ปี {$record->year}");
 
+        if ($round->prepared_by && $round->prepared_by !== $user->id) {
+            User::find($round->prepared_by)?->notify(new WorkflowNotification(
+                'approved',
+                'อนุมัติแล้ว ✓',
+                "{$record->server->name} · {$this->monthName($month)} {$record->year} — อนุมัติโดย {$user->name}",
+                "/records/{$record->id}?month={$month}",
+            ));
+        }
+
         return response()->json(['data' => $this->fullRecord($record->fresh())]);
     }
 
@@ -254,18 +299,25 @@ class MaintenanceRecordController extends Controller
     {
         $round = $this->roundFor($record, $month);
 
-        if ($round->status !== MaintenanceRound::STATUS_SUBMITTED) {
+        if (! in_array($round->status, [MaintenanceRound::STATUS_SUBMITTED, MaintenanceRound::STATUS_APPROVED], true)) {
             throw ValidationException::withMessages([
-                'status' => ['ต้องเป็นรอบที่ส่งแล้วเท่านั้นจึงจะตีกลับได้'],
+                'status' => ['ต้องเป็นรอบที่ส่งแล้วหรืออนุมัติแล้วเท่านั้นจึงจะตีกลับได้'],
             ]);
         }
 
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+        $user = $request->user();
 
+        // Rejecting an approved round voids the approval and sends it back for revision.
         $round->update([
             'status' => MaintenanceRound::STATUS_REJECTED,
             'rejected_reason' => $data['reason'],
             'rejected_at' => now(),
+            'approved_by' => null,
+            'approved_name' => null,
+            'approved_position' => null,
+            'approved_signature_path' => null,
+            'approved_signed_at' => null,
         ]);
 
         $this->syncAggregate($record);
@@ -273,7 +325,22 @@ class MaintenanceRecordController extends Controller
             'reason' => $data['reason'],
         ]);
 
+        if ($round->prepared_by && $round->prepared_by !== $user->id) {
+            User::find($round->prepared_by)?->notify(new WorkflowNotification(
+                'rejected',
+                'ถูกตีกลับ — ต้องแก้ไข',
+                "{$record->server->name} · {$this->monthName($month)} {$record->year} — เหตุผล: {$data['reason']}",
+                "/records/{$record->id}?month={$month}",
+            ));
+        }
+
         return response()->json(['data' => $this->fullRecord($record->fresh())]);
+    }
+
+    private function monthName(int $m): string
+    {
+        $names = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        return $names[$m] ?? (string) $m;
     }
 
     private function roundFor(MaintenanceRecord $record, int $month): MaintenanceRound

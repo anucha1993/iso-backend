@@ -21,6 +21,7 @@ class RolePermissionSeeder extends Seeder
             'records.update',
             'records.submit',
             'records.approve',
+            'records.delete',
             'analysis.view',
             'audit.view',
         ];

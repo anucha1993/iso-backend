@@ -25,6 +25,7 @@ class ServerController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:servers,name'],
+            'server_type' => ['nullable', 'string', 'max:100'],
             'responsible' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'is_active' => ['boolean'],
@@ -40,6 +41,7 @@ class ServerController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255', 'unique:servers,name,'.$server->id],
+            'server_type' => ['nullable', 'string', 'max:100'],
             'responsible' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'is_active' => ['boolean'],
