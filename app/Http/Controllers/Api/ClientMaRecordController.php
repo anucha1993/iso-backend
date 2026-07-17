@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ChecklistItem;
 use App\Models\ClientMachine;
 use App\Models\ClientMaEntry;
 use App\Models\ClientMaRecord;
@@ -64,14 +65,21 @@ class ClientMaRecordController extends Controller
                 'note' => $data['note'] ?? null,
             ]);
 
-            $rows = ClientMachine::where('is_active', true)->pluck('id')->map(fn ($id) => [
-                'client_ma_record_id' => $record->id,
-                'client_machine_id' => $id,
-                'status' => 'na',
-                'tasks' => json_encode($this->defaultTasks()),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ])->all();
+            $tasksJson = json_encode($this->defaultTasks());
+            $rows = ClientMachine::where('is_active', true)
+                ->get(['id', 'name', 'owner', 'floor', 'department'])
+                ->map(fn ($m) => [
+                    'client_ma_record_id' => $record->id,
+                    'client_machine_id' => $m->id,
+                    'snap_name' => $m->name,
+                    'snap_owner' => $m->owner,
+                    'snap_floor' => $m->floor,
+                    'snap_department' => $m->department,
+                    'status' => 'na',
+                    'tasks' => $tasksJson,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ])->all();
             if ($rows) {
                 ClientMaEntry::insert($rows);
             }
@@ -101,7 +109,11 @@ class ClientMaRecordController extends Controller
             'entries.*.id' => ['required', 'integer'],
             'entries.*.status' => ['required', Rule::in(['done', 'issue', 'na'])],
             'entries.*.tasks' => ['nullable', 'array'],
+            'entries.*.metrics' => ['nullable', 'array'],
             'entries.*.note' => ['nullable', 'string', 'max:500'],
+            'entries.*.snap_owner' => ['nullable', 'string', 'max:255'],
+            'entries.*.snap_floor' => ['nullable', 'string', 'max:100'],
+            'entries.*.snap_department' => ['nullable', 'string', 'max:255'],
         ]);
 
         $record->update([
@@ -111,12 +123,22 @@ class ClientMaRecordController extends Controller
         ]);
 
         foreach ($data['entries'] ?? [] as $e) {
-            ClientMaEntry::where('client_ma_record_id', $record->id)->whereKey($e['id'])
-                ->update([
-                    'status' => $e['status'],
-                    'tasks' => isset($e['tasks']) ? json_encode($e['tasks']) : null,
-                    'note' => $e['note'] ?? null,
-                ]);
+            $upd = [
+                'status' => $e['status'],
+                'note' => $e['note'] ?? null,
+            ];
+            if (array_key_exists('tasks', $e)) {
+                $upd['tasks'] = json_encode($e['tasks']);
+            }
+            if (array_key_exists('metrics', $e)) {
+                $upd['metrics'] = json_encode($e['metrics']);
+            }
+            foreach (['snap_owner', 'snap_floor', 'snap_department'] as $k) {
+                if (array_key_exists($k, $e)) {
+                    $upd[$k] = $e[$k];
+                }
+            }
+            ClientMaEntry::where('client_ma_record_id', $record->id)->whereKey($e['id'])->update($upd);
         }
 
         AuditLogger::log('updated', $record, "บันทึกข้อมูลบำรุงรักษา Client {$this->monthLabel($record->month)} ปี {$record->year}");
@@ -297,15 +319,18 @@ class ClientMaRecordController extends Controller
      */
     private function defaultTasks(): array
     {
-        return [
-            'patch' => false,
-            'antivirus' => false,
-            'disk_cleanup' => false,
-            'disk_space' => false,
-            'software' => false,
-            'reboot' => false,
-            'agent' => false,
-        ];
+        $formId = FormTemplate::where('module_key', 'client_maintenance')->value('id');
+        if (! $formId) {
+            return [];
+        }
+        $keys = ChecklistItem::where('form_template_id', $formId)
+            ->where('is_active', true)
+            ->whereNotNull('key')
+            ->orderBy('order')
+            ->pluck('key')
+            ->all();
+
+        return array_fill_keys($keys, false);
     }
 
     private function monthLabel(int $m): string
@@ -325,10 +350,36 @@ class ClientMaRecordController extends Controller
             $counts[$e->status] = ($counts[$e->status] ?? 0) + 1;
         }
 
+        // Per-machine corrective-action counts (findings belong to the asset, across all rounds)
+        $machineIds = $record->entries->pluck('client_machine_id')->filter()->unique()->values()->all();
+        $caCounts = [];
+        if ($machineIds) {
+            $rows = \App\Models\CorrectiveAction::query()
+                ->where('subject_type', ClientMachine::class)
+                ->whereIn('subject_id', $machineIds)
+                ->selectRaw("subject_id, COUNT(*) as total, SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as open")
+                ->groupBy('subject_id')
+                ->get();
+            foreach ($rows as $r) {
+                $caCounts[(int) $r->subject_id] = ['count' => (int) $r->total, 'open' => (int) $r->open];
+            }
+        }
+
+        $entries = $record->entries->map(function ($e) use ($caCounts) {
+            $arr = $e->toArray();
+            $arr['corrective_count'] = $caCounts[(int) $e->client_machine_id]['count'] ?? 0;
+            $arr['corrective_open'] = $caCounts[(int) $e->client_machine_id]['open'] ?? 0;
+
+            return $arr;
+        })->all();
+
         return array_merge($record->toArray(), [
+            'entries' => $entries,
             'summary' => array_merge($counts, ['total' => $record->entries->count()]),
             'doc_code' => $record->formTemplate?->code ?? 'FM-IT-03',
             'revision' => $record->formTemplate?->revision,
+            'standards' => \App\Models\ChecklistStandard::effectiveFor($record->form_template_id),
+            'tasks_def' => ChecklistItem::where('form_template_id', $record->form_template_id)->where('is_active', true)->whereNotNull('key')->orderBy('order')->get(['id', 'key', 'name', 'description', 'check_method', 'order']),
         ]);
     }
 }

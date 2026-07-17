@@ -18,7 +18,7 @@ class ChecklistAnalyzer
     {
         $record->loadMissing(['readings', 'entries']);
 
-        $standards = ChecklistStandard::where('is_active', true)->orderBy('order')->get();
+        $standards = ChecklistStandard::effectiveFor($record->form_template_id);
         $readings = $record->readings->keyBy('month');
         $months = range(1, 12);
 

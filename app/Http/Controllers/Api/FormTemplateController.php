@@ -47,6 +47,7 @@ class FormTemplateController extends Controller
             'tags' => ['nullable', 'array'],
             'tags.*' => ['string', 'max:50'],
             'module_key' => ['required', 'string', 'max:100'],
+            'standard_profile_id' => ['nullable', 'exists:standard_profiles,id'],
             'route' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'confidentiality' => ['required', Rule::in(['general', 'confidential'])],

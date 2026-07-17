@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <style>
-        * { font-family: garuda, sans-serif; }
+        * { font-family: sarabun, sans-serif; }
         body { font-size: 8pt; color: #1f2937; line-height: 1.08; }
         table { border-collapse: collapse; }
         .w100 { width: 100%; }

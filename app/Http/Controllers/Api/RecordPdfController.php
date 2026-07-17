@@ -124,7 +124,7 @@ class RecordPdfController extends Controller
 
         $html = View::make('pdf.maintenance-record', $data)->render();
 
-        $footer = '<table width="100%" style="font-family: garuda; font-size:7pt; color:#94a3b8;"><tr>'
+        $footer = '<table width="100%" style="font-family: sarabun; font-size:7pt; color:#94a3b8;"><tr>'
             .'<td width="50%">วันที่บังคับใช้: '.e($effective).'</td>'
             .'<td width="50%" style="text-align:right;">'.e($data['docCode']).' (Rev'.e($data['rev']).')('.e($classification).')</td>'
             .'</tr></table>';
@@ -132,10 +132,22 @@ class RecordPdfController extends Controller
         $tmp = storage_path('app/mpdf');
         File::ensureDirectoryExists($tmp);
 
+        $defaultFontDirs = (new \Mpdf\Config\ConfigVariables())->getDefaults()['fontDir'];
+        $defaultFontData = (new \Mpdf\Config\FontVariables())->getDefaults()['fontdata'];
+
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4-L',
-            'default_font' => 'garuda',
+            'fontDir' => array_merge($defaultFontDirs, [resource_path('fonts')]),
+            'fontdata' => $defaultFontData + [
+                'sarabun' => [
+                    'R' => 'Sarabun-Regular.ttf',
+                    'B' => 'Sarabun-Bold.ttf',
+                    'I' => 'Sarabun-Italic.ttf',
+                    'BI' => 'Sarabun-BoldItalic.ttf',
+                ],
+            ],
+            'default_font' => 'sarabun',
             'default_font_size' => 8,
             'margin_top' => 8,
             'margin_bottom' => 12,

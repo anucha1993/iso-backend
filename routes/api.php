@@ -5,10 +5,13 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChecklistController;
 use App\Http\Controllers\Api\ClientMachineController;
+use App\Http\Controllers\Api\ClientMaPdfController;
 use App\Http\Controllers\Api\ClientMaRecordController;
+use App\Http\Controllers\Api\CorrectiveActionController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\FormRegisterController;
 use App\Http\Controllers\Api\FormTemplateController;
+use App\Http\Controllers\Api\StandardProfileController;
 use App\Http\Controllers\Api\MaintenanceRecordController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
@@ -75,9 +78,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Client machines master (FM-IT-03)
     Route::get('/client-machines', [ClientMachineController::class, 'index']);
+    Route::get('/client-machines/{machine}/history', [ClientMachineController::class, 'history']);
     Route::post('/client-machines', [ClientMachineController::class, 'store'])->middleware('permission:servers.manage');
     Route::put('/client-machines/{machine}', [ClientMachineController::class, 'update'])->middleware('permission:servers.manage');
-    Route::post('/client-machines/import', [ClientMachineController::class, 'bulkImport'])->middleware('permission:servers.manage');
+    Route::post('/client-machines/import', [ClientMachineController::class, 'import'])->middleware('permission:servers.manage');
+    Route::get('/client-machine-imports', [ClientMachineController::class, 'imports'])->middleware('permission:servers.manage');
+    Route::get('/client-machine-imports/{import}', [ClientMachineController::class, 'importShow'])->middleware('permission:servers.manage');
 
     // Client maintenance records (FM-IT-03)
     Route::get('/client-ma', [ClientMaRecordController::class, 'index']);
@@ -90,6 +96,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/client-ma/{record}/report', [ClientMaRecordController::class, 'uploadReport'])->middleware('permission:records.update');
     Route::delete('/client-ma/{record}/report', [ClientMaRecordController::class, 'deleteReport'])->middleware('permission:records.update');
     Route::delete('/client-ma/{record}', [ClientMaRecordController::class, 'destroy'])->middleware('permission:records.delete');
+    Route::get('/client-ma/{record}/pdf', [ClientMaPdfController::class, 'show']);
+
+    // General corrective-action / remark log (attaches to any form record)
+    Route::get('/corrective-actions', [CorrectiveActionController::class, 'index']);
+    Route::post('/corrective-actions', [CorrectiveActionController::class, 'store'])->middleware('permission:records.update');
+    Route::put('/corrective-actions/{correctiveAction}', [CorrectiveActionController::class, 'update'])->middleware('permission:records.update');
+    Route::delete('/corrective-actions/{correctiveAction}', [CorrectiveActionController::class, 'destroy'])->middleware('permission:records.update');
 
     // Admin: server master data
     Route::post('/servers', [ServerController::class, 'store'])->middleware('permission:servers.manage');
@@ -99,6 +112,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/checklist-items', [ChecklistController::class, 'storeItem'])->middleware('permission:users.manage');
     Route::put('/checklist-items/{item}', [ChecklistController::class, 'updateItem'])->middleware('permission:users.manage');
     Route::delete('/checklist-items/{item}', [ChecklistController::class, 'destroyItem'])->middleware('permission:users.manage');
+
+    // Admin: threshold standards (per-form or global default)
+    Route::post('/checklist-standards', [ChecklistController::class, 'storeStandard'])->middleware('permission:users.manage');
+    Route::put('/checklist-standards/{standard}', [ChecklistController::class, 'updateStandard'])->middleware('permission:users.manage');
+    Route::delete('/checklist-standards/{standard}', [ChecklistController::class, 'destroyStandard'])->middleware('permission:users.manage');
+
+    // Admin: standard profiles (reusable metric sets: Server/PC, UPS, Network ฯลฯ)
+    Route::get('/standard-profiles', [StandardProfileController::class, 'index']);
+    Route::get('/standard-profiles/{profile}', [StandardProfileController::class, 'show']);
+    Route::post('/standard-profiles', [StandardProfileController::class, 'store'])->middleware('permission:users.manage');
+    Route::put('/standard-profiles/{profile}', [StandardProfileController::class, 'update'])->middleware('permission:users.manage');
+    Route::delete('/standard-profiles/{profile}', [StandardProfileController::class, 'destroy'])->middleware('permission:users.manage');
 
     // Admin: users & roles
     Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.manage');

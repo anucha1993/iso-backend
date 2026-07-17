@@ -4,9 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClientMachine;
+use App\Models\ClientMaEntry;
+use App\Models\ClientMachineImport;
 use App\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class ClientMachineController extends Controller
 {
@@ -18,6 +22,41 @@ class ClientMachineController extends Controller
         }
 
         return response()->json(['data' => $query->get()]);
+    }
+
+    /**
+     * Full maintenance history of one machine across every monthly record.
+     */
+    public function history(ClientMachine $machine): JsonResponse
+    {
+        $history = ClientMaEntry::where('client_machine_id', $machine->id)
+            ->with('record:id,year,month,status')
+            ->get()
+            ->filter(fn ($e) => $e->record !== null)
+            ->map(fn ($e) => [
+                'record_id' => $e->client_ma_record_id,
+                'year' => $e->record->year,
+                'month' => $e->record->month,
+                'record_status' => $e->record->status,
+                'status' => $e->status,
+                'tasks' => $e->tasks ?? [],
+                'note' => $e->note,
+                'snap_owner' => $e->snap_owner,
+                'snap_floor' => $e->snap_floor,
+                'snap_department' => $e->snap_department,
+                'metrics' => $e->metrics ?? [],
+            ])
+            ->sortByDesc(fn ($r) => $r['year'] * 100 + $r['month'])
+            ->values();
+
+        $clientFormId = \App\Models\FormTemplate::where('module_key', 'client_maintenance')->value('id');
+
+        return response()->json(['data' => [
+            'machine' => $machine,
+            'history' => $history,
+            'standards' => \App\Models\ChecklistStandard::effectiveFor($clientFormId),
+            'tasks_def' => \App\Models\ChecklistItem::where('form_template_id', $clientFormId)->where('is_active', true)->whereNotNull('key')->orderBy('order')->get(['id', 'key', 'name', 'description', 'check_method', 'order']),
+        ]]);
     }
 
     public function store(Request $request): JsonResponse
@@ -37,39 +76,133 @@ class ClientMachineController extends Controller
     }
 
     /**
-     * Bulk import machines from pasted lines: name[,floor[,owner[,department[,asset_tag]]]]
+     * Import machines from an uploaded CSV file (or pasted text).
+     * Matches existing machines by name (hostname): update if found, else create.
+     * Records a history row with field-level diffs and stores the source file.
+     * Columns: name, floor, owner, department, asset_tag, os
      */
-    public function bulkImport(Request $request): JsonResponse
+    public function import(Request $request): JsonResponse
     {
-        $data = $request->validate(['text' => ['required', 'string', 'max:100000']]);
+        $request->validate([
+            'file' => ['nullable', 'file', 'mimes:csv,txt', 'max:5120'],
+            'text' => ['nullable', 'string', 'max:200000'],
+        ]);
 
+        $file = $request->file('file');
+        $filename = $file ? $file->getClientOriginalName() : ('paste-'.now()->format('Ymd-His').'.csv');
+        $content = $file ? file_get_contents($file->getRealPath()) : (string) $request->input('text', '');
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', (string) $content); // strip UTF-8 BOM
+
+        if (trim((string) $content) === '') {
+            throw ValidationException::withMessages(['file' => ['ไม่พบข้อมูลสำหรับนำเข้า']]);
+        }
+
+        $fields = ['floor', 'owner', 'department', 'asset_tag', 'os'];
         $created = 0;
+        $updated = 0;
         $skipped = 0;
-        foreach (preg_split('/\r\n|\r|\n/', $data['text']) as $line) {
+        $changes = [];
+
+        foreach (preg_split('/\r\n|\r|\n/', $content) as $i => $line) {
             $line = trim($line);
             if ($line === '') {
                 continue;
             }
-            $cols = array_map('trim', explode(',', $line));
+            $cols = array_map('trim', str_getcsv($line));
             $name = $cols[0] ?? '';
-            if ($name === '' || ClientMachine::where('name', $name)->exists()) {
+            if ($i === 0 && in_array(mb_strtolower($name), ['name', 'hostname', 'ชื่อเครื่อง'], true)) {
+                continue; // header row
+            }
+            if ($name === '') {
                 $skipped++;
                 continue;
             }
-            ClientMachine::create([
-                'name' => $name,
+
+            $incoming = [
                 'floor' => ($cols[1] ?? '') !== '' ? $cols[1] : null,
                 'owner' => ($cols[2] ?? '') !== '' ? $cols[2] : null,
                 'department' => ($cols[3] ?? '') !== '' ? $cols[3] : null,
                 'asset_tag' => ($cols[4] ?? '') !== '' ? $cols[4] : null,
-                'is_active' => true,
-            ]);
-            $created++;
+                'os' => ($cols[5] ?? '') !== '' ? $cols[5] : null,
+            ];
+
+            $machine = ClientMachine::where('name', $name)->first();
+            if ($machine) {
+                $diff = [];
+                $apply = [];
+                foreach ($fields as $f) {
+                    if ($incoming[$f] !== null && (string) $incoming[$f] !== (string) $machine->$f) {
+                        $diff[$f] = ['from' => $machine->$f, 'to' => $incoming[$f]];
+                        $apply[$f] = $incoming[$f];
+                    }
+                }
+                if ($apply) {
+                    $machine->update($apply);
+                    $updated++;
+                    $changes[] = ['machine_id' => $machine->id, 'name' => $name, 'action' => 'update', 'diff' => $diff];
+                } else {
+                    $skipped++;
+                }
+            } else {
+                $values = array_filter($incoming, fn ($v) => $v !== null);
+                $machine = ClientMachine::create(array_merge(['name' => $name, 'is_active' => true], $values));
+                $created++;
+                $changes[] = ['machine_id' => $machine->id, 'name' => $name, 'action' => 'create', 'values' => $values];
+            }
         }
 
-        AuditLogger::log('created', null, "นำเข้าเครื่อง Client {$created} เครื่อง (ข้าม {$skipped})");
+        $disk = config('filesystems.attachment', 'public');
+        if ($file) {
+            $path = $file->store('client-inventory-imports', $disk);
+        } else {
+            $path = 'client-inventory-imports/'.$filename;
+            Storage::disk($disk)->put($path, $content);
+        }
 
-        return response()->json(['created' => $created, 'skipped' => $skipped]);
+        $import = ClientMachineImport::create([
+            'filename' => $filename,
+            'path' => $path,
+            'uploaded_by' => $request->user()->id,
+            'uploaded_by_name' => $request->user()->name,
+            'created_count' => $created,
+            'updated_count' => $updated,
+            'skipped_count' => $skipped,
+            'changes' => $changes,
+        ]);
+
+        AuditLogger::log('created', null, "นำเข้า inventory Client: สร้าง {$created}, แก้ไข {$updated}, ข้าม {$skipped} ({$filename})");
+
+        return response()->json(['data' => [
+            'created' => $created,
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'import_id' => $import->id,
+        ]]);
+    }
+
+    /**
+     * History of inventory import batches (newest first).
+     */
+    public function imports(): JsonResponse
+    {
+        $disk = config('filesystems.attachment', 'public');
+        $items = ClientMachineImport::latest()
+            ->limit(100)
+            ->get(['id', 'filename', 'path', 'uploaded_by_name', 'created_count', 'updated_count', 'skipped_count', 'created_at'])
+            ->map(fn ($im) => array_merge($im->toArray(), [
+                'file_url' => $im->path ? Storage::disk($disk)->url($im->path) : null,
+            ]));
+
+        return response()->json(['data' => $items]);
+    }
+
+    public function importShow(ClientMachineImport $import): JsonResponse
+    {
+        $disk = config('filesystems.attachment', 'public');
+
+        return response()->json(['data' => array_merge($import->toArray(), [
+            'file_url' => $import->path ? Storage::disk($disk)->url($import->path) : null,
+        ])]);
     }
 
     /**

@@ -9,8 +9,11 @@ class ChecklistItem extends Model
 {
     protected $fillable = [
         'form_template_id',
+        'key',
         'order',
         'name',
+        'description',
+        'check_method',
         'frequency_note',
         'iso_control',
         'is_active',

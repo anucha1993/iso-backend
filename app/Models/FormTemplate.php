@@ -15,6 +15,7 @@ class FormTemplate extends Model
         'frequency_note',
         'tags',
         'module_key',
+        'standard_profile_id',
         'route',
         'description',
         'confidentiality',
@@ -36,5 +37,10 @@ class FormTemplate extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(FormCategory::class, 'form_category_id');
+    }
+
+    public function standardProfile(): BelongsTo
+    {
+        return $this->belongsTo(StandardProfile::class, 'standard_profile_id');
     }
 }
