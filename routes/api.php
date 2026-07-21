@@ -81,6 +81,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/client-machines/{machine}/history', [ClientMachineController::class, 'history']);
     Route::post('/client-machines', [ClientMachineController::class, 'store'])->middleware('permission:servers.manage');
     Route::put('/client-machines/{machine}', [ClientMachineController::class, 'update'])->middleware('permission:servers.manage');
+    Route::delete('/client-machines/{machine}', [ClientMachineController::class, 'destroy'])->middleware('permission:servers.manage');
     Route::post('/client-machines/import', [ClientMachineController::class, 'import'])->middleware('permission:servers.manage');
     Route::get('/client-machine-imports', [ClientMachineController::class, 'imports'])->middleware('permission:servers.manage');
     Route::get('/client-machine-imports/{import}', [ClientMachineController::class, 'importShow'])->middleware('permission:servers.manage');

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClientMachine;
 use App\Models\ClientMaEntry;
 use App\Models\ClientMachineImport;
+use App\Models\CorrectiveAction;
 use App\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -73,6 +74,30 @@ class ClientMachineController extends Controller
         AuditLogger::log('updated', $machine, 'แก้ไขเครื่อง Client: '.$machine->name);
 
         return response()->json(['data' => $machine]);
+    }
+
+    public function destroy(ClientMachine $machine): JsonResponse
+    {
+        // Keep ISO history intact: if the machine appears in any monthly MA
+        // record, deactivate instead of hard-deleting (same pattern as checklist items).
+        if (ClientMaEntry::where('client_machine_id', $machine->id)->exists()) {
+            $machine->update(['is_active' => false]);
+            AuditLogger::log('updated', $machine, 'ปิดใช้งานเครื่อง Client (มีประวัติบำรุงรักษา): '.$machine->name);
+
+            return response()->json(['data' => $machine->fresh(), 'soft' => true]);
+        }
+
+        // No history: safe to hard-delete. Remove any per-asset corrective
+        // actions first (polymorphic, no FK cascade) to avoid orphaned rows.
+        CorrectiveAction::where('subject_type', ClientMachine::class)
+            ->where('subject_id', $machine->id)
+            ->delete();
+
+        $name = $machine->name;
+        $machine->delete();
+        AuditLogger::log('deleted', $machine, 'ลบเครื่อง Client: '.$name);
+
+        return response()->json(['ok' => true]);
     }
 
     /**
